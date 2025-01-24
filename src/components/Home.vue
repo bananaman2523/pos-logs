@@ -25,7 +25,7 @@
         <div class="select-count">
           <div v-if="restartCount.lengthCount > 0" style="display: flex;justify-content: center;">
             <p>RESTART: {{ restartCount.lengthCount }} </p>
-            <select v-if="restartCount.lengthCount > 0" id="restartDropdown" v-model="selectedRestart" @change="scrollToRow(selectedRestart)" style="margin: 16px;">
+            <select id="restartDropdown" v-model="selectedRestart" @change="scrollToRow(selectedRestart)" style="margin: 16px;">
               <option v-for="(log, index) in (restartCount.dropdown)" :key="index" :value="log.id">
                 [{{ log.id }}] : {{ log.timestamp }} {{ log.message }}
               </option>
@@ -83,6 +83,8 @@ import { ref, computed } from 'vue';
 const logs = ref([]);
 const selectedDate = ref('');
 const selectedShutdown = ref(null); 
+const selectedRestart = ref(null);
+const outputLogs = ref();
 const chunks = ref([]);
 const selectedChunk = ref(null);
 const chunkContent = ref([]);
@@ -164,6 +166,49 @@ const splitChunkByDate = (content, dateGroups) => {
   });
 };
 
+const mergeLogs = (inputLogs) => {
+  const logLines = inputLogs.split("\n");
+
+  const mergedLogs = {};
+  const timestampPattern = /^\d{4}-\d{2}-\d{2}/;
+
+  let currentDate = null;
+  let previousLine = '';
+
+  logLines.forEach((line) => {
+    const match = line.match(timestampPattern);
+    if (match) {
+      const dateStr = match[0];
+
+      if (previousLine.trim()) {
+        mergedLogs[currentDate]?.push(previousLine.trim());
+      }
+
+      if (!mergedLogs[dateStr]) {
+        mergedLogs[dateStr] = [];
+      }
+
+      currentDate = dateStr;
+      previousLine = line;
+    } else {
+
+      previousLine += ` ${line.trim()}`;
+    }
+  });
+
+  if (previousLine.trim() && currentDate) {
+    mergedLogs[currentDate].push(previousLine.trim());
+  }
+
+  const output = Object.entries(mergedLogs)
+    .map(([date, logs]) => `${date}\n${logs.join("\n")}`)
+    .join("\n");
+
+  console.log(output);
+  return output;
+};
+
+
 const loadChunkContent = () => {
   const selected = chunks.value.find(chunk => chunk.url === selectedChunk.value);
   if (selected) {
@@ -171,9 +216,9 @@ const loadChunkContent = () => {
       .then(response => response.text())
       .then(data => {
         chunkContent.value = data.split("\n");
-        const result = convertToLog(chunkContent.value)
+        const dataLog = convertToLog(chunkContent.value)
+        const result = mergeLogs(dataLog)
         processLogsWithWorker(result)
-        
       })
       .catch(error => {
         console.error('Error loading chunk content:', error);
