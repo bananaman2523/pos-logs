@@ -460,7 +460,7 @@ tbody tr:hover {
 }
 
 .error-level {
-  background-color: #ff0000;
+  background-color: #FB4141;
   font-weight: bold;
 }
 
@@ -483,6 +483,26 @@ p {
   display: flex;
   justify-content: center;
   align-items: center;
+}
+
+button {
+  padding: 10px 20px;
+  border: none;
+  background-color: #4CAF50;
+  color: white;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s;
+}
+
+button:hover {
+  background-color: #45a049;
+}
+
+button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
 }
 
 @media (max-width: 768px) {
