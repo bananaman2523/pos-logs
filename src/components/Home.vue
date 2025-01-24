@@ -19,12 +19,40 @@
         <button @click="downloadLogs('csv')" :disabled="!logs.length">Download as .csv</button>
       </div>
 
+      <div v-if="logs.length">
+        <table style="width: 16px;text-align: center;">
+          <thead>
+            <tr>
+              <th style="width: 16px;">Error</th>
+              <th style="width: 16px;">Warnings</th>
+              <th style="width: 16px;">Info</th>
+              <th style="width: 16px;">Fatal</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="text-align:center">
+                <input type="checkbox" v-model="filterErrors" :checked="filterErrors" />
+              </td>
+              <td style="text-align:center">
+                <input type="checkbox" v-model="filterWarnings" :checked="filterWarnings" />
+              </td>
+              <td style="text-align:center">
+                <input type="checkbox" v-model="filterInfo" :checked="filterInfo" />
+              </td>
+              <td style="text-align:center">
+                <input type="checkbox" v-model="filterFatal" :checked="filterFatal" />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <div v-if="logs.length" class="log-summary">
         <p>Total Logs: {{ logs.length }} | Errors: {{ errorCount }} | Warnings: {{ warnCount }} | Info : {{
           noLevelCount }}</p>
         <div class="select-count">
           <div v-if="restartCount.lengthCount > 0" style="display: flex;justify-content: center;">
-            <p>RESTART: {{ restartCount.lengthCount }} </p>
+            <input type="checkbox" v-model="filterRestart" :checked="filterRestart" /><p>RESTART: {{ restartCount.lengthCount }} </p>
             <select id="restartDropdown" v-model="selectedRestart" @change="scrollToRow(selectedRestart)" style="margin: 16px;">
               <option v-for="(log, index) in (restartCount.dropdown)" :key="index" :value="log.id">
                 [{{ log.id }}] : {{ log.timestamp }} {{ log.message }}
@@ -33,7 +61,7 @@
           </div>
 
           <div v-if="shutdownCount.lengthCount > 0" style="display: flex;justify-content: center;">
-            <p>SHUTDOWN: {{ shutdownCount.lengthCount }} </p>
+            <input type="checkbox" v-model="filterShutdown" :checked="filterShutdown" /><p>SHUTDOWN: {{ shutdownCount.lengthCount }} </p>
             <select id="shutdownDropdown" v-model="selectedShutdown" @change="scrollToRow(selectedShutdown)" style="margin: 16px;">
               <option v-for="(log, index) in (shutdownCount.dropdown)" :key="index" :value="log.id">
                 [{{ log.id }}] : {{ log.timestamp }} {{ log.message }}
@@ -52,7 +80,6 @@
               <th style="width: 60px;">Timestamp</th>
               <th style="width: 150px;">Level</th>
               <th style="width: 800px;">Message</th>
-              <!-- <th style="width: 300px;">Details</th> -->
             </tr>
           </thead>
           <tbody>
@@ -91,7 +118,45 @@ const chunkContent = ref([]);
 
 let worker = null;
 
+const filterErrors = ref(false);
+const filterWarnings = ref(false);
+const filterInfo = ref(false);
+const filterFatal = ref(false);
+const filterRestart = ref(false);
+const filterShutdown = ref(false);
+
 const filteredLogs = computed(() => {
+  return logs.value.filter(log => {
+    const matchesError = filterErrors.value && log.level.toLowerCase() === 'error';
+    const matchesWarning = filterWarnings.value && log.level.toLowerCase() === 'warn';
+    const matchesInfo = filterInfo.value && log.level.toLowerCase() === 'info';
+    const matchesFatal = filterFatal.value && log.level.toLowerCase() === 'fatal';
+
+    const matchesRestart = filterRestart.value && log.message.includes('RESTART');
+    const matchesShutdown = filterShutdown.value && log.message.includes('SHUTDOWN');
+
+    if (!filterErrors.value && !filterWarnings.value && !filterInfo.value && !filterFatal.value && !filterRestart.value && !filterShutdown.value) {
+      return true;
+    }
+
+    if (filterRestart.value && !filterShutdown.value) {
+      return matchesRestart;
+    }
+
+    if (filterShutdown.value && !filterRestart.value) {
+      return matchesShutdown;
+    }
+
+    if (filterRestart.value && filterShutdown.value) {
+      return matchesRestart || matchesShutdown;
+    }
+
+    return matchesError || matchesWarning || matchesInfo || matchesFatal;
+  });
+});
+
+
+const filteredLogsCount = computed(() => {
   if (!selectedDate.value) {
     return logs.value;
   }
@@ -113,7 +178,7 @@ const handleFileUpload = (event) => {
 
   const processChunk = () => {
     if (start >= file.size) {
-      generateFilesByDate(dateGroups, file.name);
+      generateFilesByDate(dateGroups);
       return;
     }
 
@@ -135,10 +200,10 @@ function convertToLog(logArray) {
     return logArray.join("\n");
 }
 
-const generateFilesByDate = (dateGroups, originalFileName) => {
+const generateFilesByDate = (dateGroups) => {
   chunks.value = Object.entries(dateGroups).map(([date, lines]) => {
     const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-    const chunkName = `${originalFileName}_${date}.log`;
+    const chunkName = `${date}`;
     const chunkUrl = URL.createObjectURL(blob);
 
     return {
@@ -239,19 +304,19 @@ const processLogsWithWorker = (content) => {
 };
 
 const errorCount = computed(() => {
-  return filteredLogs.value.filter(log => log.level.toLowerCase() === 'error').length;
+  return filteredLogsCount.value.filter(log => log.level.toLowerCase() === 'error').length;
 });
 
 const warnCount = computed(() => {
-  return filteredLogs.value.filter(log => log.level.toLowerCase() === 'warn').length;
+  return filteredLogsCount.value.filter(log => log.level.toLowerCase() === 'warn').length;
 });
 
 const noLevelCount = computed(() => {
-  return filteredLogs.value.filter(log => log.level.toLowerCase() === 'info').length;
+  return filteredLogsCount.value.filter(log => log.level.toLowerCase() === 'info').length;
 });
 
 const restartCount = computed(() => {
-  const data = filteredLogs.value.filter(log => log.message.includes('[VIVIPOS]') && log.message.includes('RESTART'))
+  const data = filteredLogsCount.value.filter(log => log.message.includes('[VIVIPOS]') && log.message.includes('RESTART'))
 
   return {
     lengthCount: data.length,
@@ -260,7 +325,7 @@ const restartCount = computed(() => {
 });
 
 const shutdownCount = computed(() => {
-  const data = filteredLogs.value.filter(log => log.message.includes('[VIVIPOS]') && log.message.includes('SHUTDOWN'))
+  const data = filteredLogsCount.value.filter(log => log.message.includes('[VIVIPOS]') && log.message.includes('SHUTDOWN'))
   
   return {
     lengthCount: data.length,
