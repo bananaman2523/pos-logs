@@ -48,7 +48,7 @@ function processLogs(content) {
                     const [, timestamp, message] = unstructuredMatch;
                     filteredLogs.push({
                         timestamp,
-                        level: '',
+                        level: 'INFO',
                         message,
                     });
                     count++;

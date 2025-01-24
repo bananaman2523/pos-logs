@@ -5,29 +5,41 @@
     </header>
 
     <section>
-      <input type="file" @change="handleFileUpload" accept=".log" />
       <div>
-        <button @click="downloadLogs('log')" :disabled="!logs.length">Download as .log</button>
+        <input type="file" @change="handleFileUpload" accept=".log" style="margin-right: 16px;"/>
+        <select v-if="chunks.length" v-model="selectedChunk" @change="loadChunkContent">
+          <option v-for="(chunk, index) in chunks" :key="index" :value="chunk.url">
+            {{ chunk.name }}
+          </option>
+        </select>
+      </div>
+      
+      <div>
+        <button @click="downloadLogs('log')" :disabled="!logs.length" style="margin-right: 16px;">Download as .log</button>
         <button @click="downloadLogs('csv')" :disabled="!logs.length">Download as .csv</button>
       </div>
 
       <div v-if="logs.length" class="log-summary">
-        <p>Total Logs: {{ logs.length }} | Errors: {{ errorCount }} | Warnings: {{ warnCount }} | No Level: {{
+        <p>Total Logs: {{ logs.length }} | Errors: {{ errorCount }} | Warnings: {{ warnCount }} | Info : {{
           noLevelCount }}</p>
         <div class="select-count">
-          <p>RESTART: {{ restartCount.lengthCount }}</p>
-          <select v-if="restartCount.lengthCount > 0" id="restartDropdown" v-model="selectedRestart" @change="scrollToRow(selectedRestart)">
-            <option v-for="(log, index) in (restartCount.dropdown)" :key="index" :value="log.id">
-              [{{ log.id }}] : {{ log.timestamp }} {{ log.message }}
-            </option>
-          </select>
+          <div v-if="restartCount.lengthCount > 0" style="display: flex;justify-content: center;">
+            <p>RESTART: {{ restartCount.lengthCount }} </p>
+            <select v-if="restartCount.lengthCount > 0" id="restartDropdown" v-model="selectedRestart" @change="scrollToRow(selectedRestart)" style="margin: 16px;">
+              <option v-for="(log, index) in (restartCount.dropdown)" :key="index" :value="log.id">
+                [{{ log.id }}] : {{ log.timestamp }} {{ log.message }}
+              </option>
+            </select>
+          </div>
 
-          <p>SHUTDOWN: {{ shutdownCount.lengthCount }}</p>
-          <select v-if="shutdownCount.lengthCount > 0" id="shutdownDropdown" v-model="selectedShutdown" @change="scrollToRow(selectedShutdown)">
-            <option v-for="(log, index) in (shutdownCount.dropdown)" :key="index" :value="log.id">
-              [{{ log.id }}] : {{ log.timestamp }} {{ log.message }}
-            </option>
-          </select>
+          <div v-if="shutdownCount.lengthCount > 0" style="display: flex;justify-content: center;">
+            <p>SHUTDOWN: {{ shutdownCount.lengthCount }} </p>
+            <select id="shutdownDropdown" v-model="selectedShutdown" @change="scrollToRow(selectedShutdown)" style="margin: 16px;">
+              <option v-for="(log, index) in (shutdownCount.dropdown)" :key="index" :value="log.id">
+                [{{ log.id }}] : {{ log.timestamp }} {{ log.message }}
+              </option>
+            </select>
+          </div>
         </div>
 
       </div>
@@ -71,6 +83,10 @@ import { ref, computed } from 'vue';
 const logs = ref([]);
 const selectedDate = ref('');
 const selectedShutdown = ref(null); 
+const chunks = ref([]);
+const selectedChunk = ref(null);
+const chunkContent = ref([]);
+
 let worker = null;
 
 const filteredLogs = computed(() => {
@@ -83,13 +99,85 @@ const filteredLogs = computed(() => {
 
 const handleFileUpload = (event) => {
   const file = event.target.files[0];
-  if (file) {
-    const reader = new FileReader();
+  if (!file) {
+    alert("Please select a file.");
+    return;
+  }
+
+  const chunkSize = 10 * 1024 * 1024; // 10MB per chunk
+  const reader = new FileReader();
+  let start = 0;
+  const dateGroups = {};
+
+  const processChunk = () => {
+    if (start >= file.size) {
+      generateFilesByDate(dateGroups, file.name);
+      return;
+    }
+
+    const chunk = file.slice(start, start + chunkSize);
     reader.onload = (e) => {
-      const fileContent = e.target.result;
-      processLogsWithWorker(fileContent);
+      const content = e.target.result;
+      splitChunkByDate(content, dateGroups);
+      start += chunkSize;
+      processChunk();
     };
-    reader.readAsText(file);
+
+    reader.readAsText(chunk);
+  };
+
+  processChunk();
+};
+
+function convertToLog(logArray) {
+    return logArray.join("\n");
+}
+
+const generateFilesByDate = (dateGroups, originalFileName) => {
+  chunks.value = Object.entries(dateGroups).map(([date, lines]) => {
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+    const chunkName = `${originalFileName}_${date}.log`;
+    const chunkUrl = URL.createObjectURL(blob);
+
+    return {
+      name: chunkName,
+      url: chunkUrl,
+    };
+  });
+};
+
+const splitChunkByDate = (content, dateGroups) => {
+  const lines = content.split("\n");
+  let lastDate = null;
+
+  lines.forEach((line) => {
+    const match = line.match(/^\d{4}-\d{2}-\d{2}/);
+    if (match) {
+      lastDate = match[0];
+      if (!dateGroups[lastDate]) {
+        dateGroups[lastDate] = [];
+      }
+      dateGroups[lastDate].push(line);
+    } else if (lastDate) {
+      dateGroups[lastDate].push(line);
+    }
+  });
+};
+
+const loadChunkContent = () => {
+  const selected = chunks.value.find(chunk => chunk.url === selectedChunk.value);
+  if (selected) {
+    fetch(selected.url)
+      .then(response => response.text())
+      .then(data => {
+        chunkContent.value = data.split("\n");
+        const result = convertToLog(chunkContent.value)
+        processLogsWithWorker(result)
+        
+      })
+      .catch(error => {
+        console.error('Error loading chunk content:', error);
+      });
   }
 };
 
@@ -114,7 +202,7 @@ const warnCount = computed(() => {
 });
 
 const noLevelCount = computed(() => {
-  return filteredLogs.value.filter(log => log.level.toLowerCase() === '').length;
+  return filteredLogs.value.filter(log => log.level.toLowerCase() === 'info').length;
 });
 
 const restartCount = computed(() => {
@@ -150,7 +238,7 @@ const downloadLogs = (format) => {
 
   if (format === 'log') {
     content = filteredLogs.value
-      .map(log => `[${log.timestamp}] [${log.level}] ${log.message}`)
+      .map(log => `${log.timestamp} : [${log.level}] ${log.message}`)
       .join('\n');
     fileType = 'text/plain';
     fileName = 'filtered_logs.log';
