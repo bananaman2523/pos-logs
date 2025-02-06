@@ -41,6 +41,14 @@ function processLogs(content) {
                 });
                 count++;
             }
+            else if (category === 'alley_mobile_redeem') {
+                filteredLogs.push({
+                    timestamp,
+                    level,
+                    message: `[${category}] ${message}`,
+                });
+                count++;
+            }
         } else {
             const unstructuredMatch = line.match(unstructuredLogRegex);
             if (unstructuredMatch) {

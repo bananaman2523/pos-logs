@@ -27,6 +27,7 @@
               <th style="width: 16px;">Warnings</th>
               <th style="width: 16px;">Info</th>
               <th style="width: 16px;">Fatal</th>
+              <th style="width: 16px;">Redeem</th>
             </tr>
           </thead>
           <tbody>
@@ -42,6 +43,9 @@
               </td>
               <td style="text-align:center">
                 <input type="checkbox" v-model="filterFatal" :checked="filterFatal" />
+              </td>
+              <td style="text-align:center">
+                <input type="checkbox" v-model="filterRedeem" :checked="filterRedeem" />
               </td>
             </tr>
           </tbody>
@@ -124,34 +128,46 @@ const filterInfo = ref(false);
 const filterFatal = ref(false);
 const filterRestart = ref(false);
 const filterShutdown = ref(false);
+const filterRedeem = ref(false);
 
 const filteredLogs = computed(() => {
-  return logs.value.filter(log => {
+  return logs.value.filter((log, index, arr) => {
     const matchesError = filterErrors.value && log.level.toLowerCase() === 'error';
     const matchesWarning = filterWarnings.value && log.level.toLowerCase() === 'warn';
     const matchesInfo = filterInfo.value && log.level.toLowerCase() === 'info';
     const matchesFatal = filterFatal.value && log.level.toLowerCase() === 'fatal';
+    const matchesRedeem = filterRedeem.value && log.message.includes('[alley_mobile_redeem]');
 
     const matchesRestart = filterRestart.value && log.message.includes('RESTART');
     const matchesShutdown = filterShutdown.value && log.message.includes('SHUTDOWN');
 
-    if (!filterErrors.value && !filterWarnings.value && !filterInfo.value && !filterFatal.value && !filterRestart.value && !filterShutdown.value) {
+    if (!filterErrors.value && !filterWarnings.value && !filterInfo.value && !filterFatal.value && !filterRestart.value && !filterShutdown.value && !filterRedeem.value) {
       return true;
     }
 
     if (filterRestart.value && !filterShutdown.value) {
-      return matchesRestart;
+      if (matchesRestart) {
+        return true;
+      }
+
+      const restartIndex = arr.findIndex((l, i) => i > index && l.message.includes('RESTART'));
+      return restartIndex !== -1 && restartIndex - index <= 20;
     }
 
     if (filterShutdown.value && !filterRestart.value) {
-      return matchesShutdown;
+      if (matchesShutdown) {
+        return true;
+      }
+
+      const shutdownIndex = arr.findIndex((l, i) => i > index && l.message.includes('SHUTDOWN'));
+      return shutdownIndex !== -1 && shutdownIndex - index <= 20;
     }
 
     if (filterRestart.value && filterShutdown.value) {
       return matchesRestart || matchesShutdown;
     }
 
-    return matchesError || matchesWarning || matchesInfo || matchesFatal;
+    return matchesError || matchesWarning || matchesInfo || matchesFatal || matchesRedeem;
   });
 });
 
